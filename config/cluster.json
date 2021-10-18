@@ -1,0 +1,8 @@
+{
+    "__default__":
+    {
+        "name":"{rule}.{wildcards}",
+        "out":"logs/{rule}/{rule}.{wildcards}.out",
+        "err":"logs/{rule}/{rule}.{wildcards}.err"
+    }
+}

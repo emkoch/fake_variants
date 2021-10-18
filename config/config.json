@@ -1,0 +1,20 @@
+{
+    "perl_lib": "/net/home/dlee/.conda/envs/py3/lib/site_perl/5.26.2/:/net/home/dlee/bin/loftee",
+    "perl_exec": "/net/home/dlee/.conda/envs/py3/bin/",
+    "vep_exec": "/net/home/dlee/bin/ensembl-vep/vep",
+    "vep_cache": "/net/home/emkoch/.vep/",
+    "vep_plugins": "/net/home/dlee/.vep/Plugins/",
+    "ancestral": "/net/home/emkoch/.vep/Plugins/homo_sapiens_ancestor_GRCh38.fa.gz",
+    "dbNSFP": "/net/data/gnomAD/vep_tables/dbNSFP4.2a_grch38.gz",
+    "dbNSFP_fields": "PrimateAI_score,LINSIGHT,integrated_fitCons_score,AltaiNeandertal,Denisova,VindijiaNeandertal,REVEL_score,CADD_phred,bStatistic",
+    "revel": "/net/home/emkoch/.vep/Plugins/new_tabbed_revel_grch38.tsv.gz",
+    "cov_file": "/net/home/emkoch/GPCR/DATA/gnomad.exomes.coverage.summary.tsv",
+    "cov_dir": "/net/home/emkoch/GPCR/DATA/coverage/",
+    "ref_dir": "/net/home/emkoch/GPCR/DATA/hg38/",
+    "GIAB_file": "/net/home/sidhantnp/LOEUF/data/GRCh38/GRCh38_alldifficultregions.bed",
+    "data_dir": "/net/home/emkoch/GPCR/DATA/all_exons/",
+    "rate_dir": "/net/home/vseplyarsky/GNOMAD_Tufts/mut_model/for_LASSO/",
+    "region_file": "/net/home/emkoch/GPCR/DATA/all_exons_mart_genesorted_reorder.txt",
+    "region_type": "exon",
+    "gnomad_file": "/net/data/gnomAD/gnomad.exomes.r2.1.1.sites.liftover_grch38.vcf.bgz"
+}
