@@ -514,7 +514,7 @@ def update_gnomad(chrom, pos, gnomad_info, variants, variant, fname, window=500,
     lengths_same, lengths = check_lengths(gnomad_info)
     assert lengths_same, (gnomad_info, lengths)
     
-    return variant
+    return variant, variants
 
 rule nearest_AN_splits:
     input:
@@ -561,8 +561,8 @@ rule nearest_AN_splits:
                         gnomad_info["chrom"] = chrom
                     first = False
                     
-                variant = update_gnomad(chrom, pos, gnomad_info, variants, variant, input[0],
-                                        window=window, gnomad_info_fields=gnomad_info_fields)
+                variant, variants = update_gnomad(chrom, pos, gnomad_info, variants, variant, input[0],
+                                                  window=window, gnomad_info_fields=gnomad_info_fields)
                 if len(gnomad_info["pos"]) == 0:
                     # print("nothing nearby")
                     var_writer.writerow(var + ["NA"]*(len(gnomad_info_fields)+1) + [-1])
