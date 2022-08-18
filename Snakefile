@@ -92,37 +92,10 @@ def get_unique_names(region_file):
     return names
 
 region_names = get_unique_names(region_file)
-print(region_names)
-
-# split_fnames = glob.glob(os.path.join(data_dir, "gene_splits/fake_transcript_variants_v4_*_processed.tsv.gz"))
-# split_fnames = [split_fname.split("_processed")[0] for split_fname in split_fnames]
-# GPCR_fnames = [split_fname for split_fname in split_fnames if check_GPCR_ids(split_fname)]
-
-# cov_fnames = glob.glob(os.path.join(data_dir, "coverage", "gnomad.exomes.coverage.summary.*"))
 
 rule all:
     input:
         os.path.join(data_dir, "fake_{region_type}_variants_syn.tsv.gz".format(region_type=region_type))
-        # "/net/home/emkoch/GPCR/DATA/all_exons/region_splits/fake_exon_variants_ENSG00000167522_ENST00000301030.10_syn.tsv.gz",
-        # "/net/home/emkoch/GPCR/DATA/all_exons/region_splits/fake_exon_variants_ENSG00000177556_ENST00000313115.11_syn.tsv.gz"
-        # [os.path.join(data_dir, "region_splits/fake_{region_type}_variants_".format(region_type=region_type) +
-        #               region_name + "_syn.tsv.gz") for region_name in region_names]
-        # os.path.join(data_dir, "fake_{region_type}_variants_syn.tsv.gz".format(region_type=region_type)),
-        #  for region_name in region_names]
-        # os.path.join(data_dir, "fake_{region_type}_variants_all.tsv.gz".format(region_type=region_type))
-        #os.path.join(data_dir, "fake_full_transcript_variants_v4.tsv.gz"),
-        #os.path.join(data_dir, "fake_transcript_variants_v4.tsv.gz")
-        # os.path.join(data_dir,"gene_splits","fake_transcript_variants_v4_ENSG00000109927_ENST00000392793.6_giab.tsv.gz")
-        #os.path.join(data_dir, "fake_transcript_variants_v4_all.tsv.gz"),
-        #os.path.join(data_dir, "fake_transcript_variants_v4_GPCR.tsv.gz"),
-        # [split_fname + "_vep.tsv.gz" for split_fname in split_fnames]
-#        os.path.join(data_dir, "fake_transcript_variants_sorted_all_syn_counts_v5.gz"),
-        # os.path.join(data_dir, "fake_transcript_variants_sorted_v3_aa_syn_GIAB_v5.gz")
-        # os.path.join(data_dir, "fake_transcript_variants_syn_v5.tsv.gz"),
-        # os.path.join(data_dir, "fake_transcript_variants_ms_v5.tsv.gz")
-        # os.path.join(data_dir, "fake_transcript_variants_sorted_all_ms_counts_v5.gz")
-        #os.path.join(data_dir, "coverage", "gnomad.exomes.lifted.coverage.summary.tsv.gz")
-        
 
 ## gnomAD coverage files are for GRCh37 so we lift over to hg38
 rule lift_coverage:
@@ -732,12 +705,6 @@ rule grab_syn:
         os.path.join(data_dir,
                      "region_splits/fake_{region_type}_variants_{{region_name}}_syn.tsv.gz".format(region_type=region_type))
     run:
-        # use_cols = ["Gene", "Canonical_transcript", "Chrom", "Pos", "Allele_ref", "Allele", "Consequence",
-        #             "CDS_position", "Protein_position", "Amino_acids", "Extra", "mu", "mu_quality", "context",
-        #             "mean", "median", "over_100", "filter", "AN", "AN_nfe", "AC", "AC_nfe",
-        #             "BaseQRankSum", "ClippingRankSum", "ReadPosRankSum", "SOR", "allele_type", "n_alt_alleles",
-        #             "rf_label", "interp_dist", "site_in_genome_bottle", "Carlson_rate"]
-
         use_cols = ["Gene", "Chrom", "Pos", "Allele_ref", "Allele", "Consequence", "filter",
                     "has_star", "lcr", "rf_label", "allele_type", "context", "AN", "AN_nfe", "AC", "AC_nfe", 
                     "mu", "mu_quality", "Carlson_rate", "interp_dist"]
@@ -751,29 +718,6 @@ rule grab_syn:
                 consequence = var[col_inds[use_cols.index("Consequence")]]
                 if "synonymous" in consequence:
                     var_writer.writerow([var[ii] for ii in col_inds])
-                
-            
-        
-# rule merge_gpcr:
-#     input:
-#         [GPCR_fname + "_giab.tsv.gz" for GPCR_fname in GPCR_fnames]
-#     output:
-#         os.path.join(data_dir, "fake_transcript_variants_v4_GPCR.tsv.gz")
-#     run:
-#         with gzip.open(output[0], "wt", newline="") as f_out:
-#             var_writer = csv.writer(f_out, delimiter="\t", lineterminator="\n")
-#             with gzip.open(input[0], "rt") as f_in:
-#                 var_reader = csv.reader(f_in, delimiter="\t")
-#                 header = next(var_reader)
-#                 var_writer.writerow(header)
-#                 for row in var_reader:
-#                     var_writer.writerow(row)
-#             for ii in range(1, len(input)):
-#                 with gzip.open(input[ii], "rt") as f_in:
-#                     var_reader = csv.reader(f_in, delimiter="\t")
-#                     header = next(var_reader)
-#                     for row in var_reader:
-#                         var_writer.writerow(row)
 
 rule merge_all:
     input:
@@ -816,17 +760,17 @@ rule merge_syn:
         os.system("sort -T /net/scratch/ -k 2,2 -k 3,3 -k 5,5 -n " + base_name + " | gzip -c > " + output.outfile)
         os.system("rm " + base_name)
 
-# rule merge_ms:
-#     input:
-#         syn_files = [split_fname + "_ms_GIAB_v5.gz" for split_fname in split_fnames]
-#     output:
-#         outfile = os.path.join(data_dir, "fake_transcript_variants_sorted_all_ms_GIAB_v5.gz")
-#     run:
-#         base_name = os.path.splitext(output.outfile)[0]
-#         print("gzip -cd " + input.syn_files[0] + " > " + base_name)
-#         os.system("gzip -cd " + input.syn_files[0] + " > " + base_name)
-#         for ii in range(1, len(input.syn_files)):
-#             print("gzip -cd " + input.syn_files[ii] + " >> " + base_name)
-#             os.system("gzip -cd " + input.syn_files[ii] + " >> " + base_name)
-#         os.system("sort -k 1,1 -k 2,2 -n " + base_name + " | gzip -c > " + output.outfile)
-#         os.system("rm " + base_name)
+rule merge_ms:
+    input:
+        syn_files = [split_fname + "_ms_GIAB_v5.gz" for split_fname in split_fnames]
+    output:
+        outfile = os.path.join(data_dir, "fake_transcript_variants_sorted_all_ms_GIAB_v5.gz")
+    run:
+        base_name = os.path.splitext(output.outfile)[0]
+        print("gzip -cd " + input.syn_files[0] + " > " + base_name)
+        os.system("gzip -cd " + input.syn_files[0] + " > " + base_name)
+        for ii in range(1, len(input.syn_files)):
+            print("gzip -cd " + input.syn_files[ii] + " >> " + base_name)
+            os.system("gzip -cd " + input.syn_files[ii] + " >> " + base_name)
+        os.system("sort -k 1,1 -k 2,2 -n " + base_name + " | gzip -c > " + output.outfile)
+        os.system("rm " + base_name)
