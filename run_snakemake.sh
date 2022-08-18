@@ -3,7 +3,7 @@
 snakemake --snakefile Snakefile \
           --cluster-config config/cluster.json \
           --cluster "qsub -N '{rule}.{wildcards}' -o 'logs/{rule}/{rule}.{wildcards}.o' -e 'logs/{rule}/{rule}.{wildcards}.o' -V -S /bin/bash -cwd" \
-          --jobs 100 \
+          --jobs 200 \
 	  --latency-wait 60 \
 	  --rerun-incomplete \
 	  --keep-going \

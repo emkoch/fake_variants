@@ -29,7 +29,7 @@ ref_dir = config["ref_dir"]
 GIAB_file = config["GIAB_file"]
 gnomad_file = config["gnomad_file"]
 data_dir = config["data_dir"]
-rate_dir_v4 = config["rate_dir"]
+rate_dir_v5 = config["rate_dir"]
 region_file = config["region_file"]
 region_type = config["region_type"]
 
@@ -42,6 +42,7 @@ GPCR_gene_ids = set(GPCR_table.gene_id)
 
 ## NOTE: Put this into config file!!
 carlson_rate_folder = '/net/home/vseplyarsky/GNOMAD_Tufts/data/Carlson/by_chr/'
+window = 500
 
 def check_GPCR_ids(fname):
     for GPCR_gene_id in GPCR_gene_ids:
@@ -73,6 +74,7 @@ def nt_to_CT(nt):
 # Here the reference nt is for the genome not Vova's context
 # If the reference is A or G, then Vova's C/T based reference
 # will need flipping
+# NOTE: not releveant anymore, Vova changed coding
 def mut_to_CT(ref_nt, mut_nt):
     if ref_nt.upper() == "A" or ref_nt.upper() == "G":
         return flip_nt(mut_nt)
@@ -101,8 +103,11 @@ print(region_names)
 rule all:
     input:
         os.path.join(data_dir, "fake_{region_type}_variants_syn.tsv.gz".format(region_type=region_type))
+        # "/net/home/emkoch/GPCR/DATA/all_exons/region_splits/fake_exon_variants_ENSG00000167522_ENST00000301030.10_syn.tsv.gz",
+        # "/net/home/emkoch/GPCR/DATA/all_exons/region_splits/fake_exon_variants_ENSG00000177556_ENST00000313115.11_syn.tsv.gz"
         # [os.path.join(data_dir, "region_splits/fake_{region_type}_variants_".format(region_type=region_type) +
-        #               region_name + "_syn.tsv.gz")
+        #               region_name + "_syn.tsv.gz") for region_name in region_names]
+        # os.path.join(data_dir, "fake_{region_type}_variants_syn.tsv.gz".format(region_type=region_type)),
         #  for region_name in region_names]
         # os.path.join(data_dir, "fake_{region_type}_variants_all.tsv.gz".format(region_type=region_type))
         #os.path.join(data_dir, "fake_full_transcript_variants_v4.tsv.gz"),
@@ -117,7 +122,9 @@ rule all:
         # os.path.join(data_dir, "fake_transcript_variants_ms_v5.tsv.gz")
         # os.path.join(data_dir, "fake_transcript_variants_sorted_all_ms_counts_v5.gz")
         #os.path.join(data_dir, "coverage", "gnomad.exomes.lifted.coverage.summary.tsv.gz")
+        
 
+## gnomAD coverage files are for GRCh37 so we lift over to hg38
 rule lift_coverage:
     input:
         cov_file
@@ -144,7 +151,9 @@ rule lift_coverage:
         # Split the lifted over file by chromosome
         # This part is still a bad hack since we don't verify the right files are created
         os.system("awk -F '\t' '{{print $0 > " + input[0].split(".tsv")[0] + "$1}}'")
-                    
+
+## For each input region generate all possible single nucleotide
+## mutations in VEP input format
 rule fake_variants:
     input:
         region_file
@@ -194,7 +203,8 @@ rule split_fakes_by_region:
         command =  "./split_script.sh " + input[0] + " " + fstem
         print(command)
         os.system(command)
-        
+
+## Run VEP on all possible SNVs in each region 
 rule vep_splits:
     input:
         os.path.join(data_dir, "region_splits/fake_{region_type}_variants_{{region_name}}.tsv.gz".format(region_type=region_type))
@@ -276,75 +286,10 @@ rule process_splits:
         os.system("gzip " + outfile_uncomp)
 
 
-rule add_mut_rate:
-    input:
-        os.path.join(data_dir, "region_splits/fake_{region_type}_variants_{{region_name}}_processed.tsv.gz".format(region_type=region_type))
-    output:
-        os.path.join(data_dir, "region_splits/fake_{region_type}_variants_{{region_name}}_mu.tsv.gz".format(region_type=region_type))
-    run:
-        with gzip.open(input[0], "rt") as f_in, gzip.open(output[0], "wt", newline="") as f_out:
-            mut_fname_v4 = "1_rate_v5"
-            mut_file_v4 = open(os.path.join(rate_dir_v4, mut_fname_v4), "r")
-            mut_reader_v4 = csv.reader(mut_file_v4, delimiter=" ")
-            mut_current_v4 = next(mut_reader_v4)
-            pos_current_v4 = int(mut_current_v4[0])
-            in_reader = csv.reader(f_in, delimiter="\t")
-            out_writer = csv.writer(f_out, delimiter="\t", lineterminator="\n")
-
-            header = next(in_reader)
-            out_writer.writerow(header + ["mu", "mu_quality", "context"])
-            
-            quality = None
-            context_current = None
-
-            alt_dict_v4 = {}
-            
-            for row in in_reader:
-                chrom = row[2]
-                try:
-                    pos = int(row[3])
-                except ValueError:
-                    continue
-                ref = row[4]
-                alt = row[5]
-                # print(chrom, pos, ref, alt)
-                
-                ## Update v4 mutation rate reader if not on the right chromosome
-                if chrom != mut_fname_v4.split("_")[0]:
-                    mut_file_v4.close()
-                    mut_fname_v4 = "{}_rate_v5".format(chrom)
-                    mut_file_v4 = open(os.path.join(rate_dir_v4, mut_fname_v4), "r")
-                    mut_reader_v4 = csv.reader(mut_file_v4, delimiter=" ")
-                    mut_current_v4 = next(mut_reader_v4)
-                    pos_current_v4 = int(mut_current_v4[0])
-
-                # Locate current mutation in v4
-                if pos_current_v4 != pos:
-                    pos_current_v4 = int(mut_current_v4[0])
-                    # print("locating mutation position: " + str(pos) + " from " + str(pos_current_v4))
-                    while pos_current_v4 < pos:
-                        mut_current_v4 = next(mut_reader_v4)
-                        pos_current_v4 = int(mut_current_v4[0])
-                    ref_current_v4 = mut_current_v4[1][2]
-                    pos_ind_v4 = pos_current_v4
-                    if ref_current_v4 != nt_to_CT(ref) and (pos_ind_v4 == pos):
-                        print("reference doesn't match, {}:{}".format(chrom, pos))
-                    alt_dict_v4 = {}
-                    while (pos_ind_v4 == pos) and (ref_current_v4 == nt_to_CT(ref)):
-                        quality = mut_current_v4[4]
-                        context_current = mut_current_v4[1][0:5]
-                        alt_dict_v4[mut_current_v4[1][6]] = float(mut_current_v4[3])
-                        mut_current_v4 = next(mut_reader_v4)
-                        pos_ind_v4 = int(mut_current_v4[0])
-                        
-                try:
-                    out_writer.writerow(row + [alt_dict_v4[mut_to_CT(ref, alt)], quality, context_current])
-                except KeyError:
-                    out_writer.writerow(row + ["NA", "NA", "NA"])
         
 rule add_coverage:
     input:
-        os.path.join(data_dir, "region_splits/fake_{region_type}_variants_{{region_name}}_mu.tsv.gz".format(region_type=region_type))
+        os.path.join(data_dir, "region_splits/fake_{region_type}_variants_{{region_name}}_processed.tsv.gz".format(region_type=region_type))
     output:
         os.path.join(data_dir, "region_splits/fake_{region_type}_variants_{{region_name}}_cov.tsv.gz".format(region_type=region_type))
     run:
@@ -378,8 +323,6 @@ rule add_coverage:
                         pos_current = int(cov_current[1])
                     except StopIteration:
                         break
-                # if pos_current > pos:
-                #     out_writer.writerow(row + ["NA"]*len(cov_current[2:]))
                 if pos_current == pos:
                     out_writer.writerow(row + cov_current[2:])
                 else:
@@ -402,7 +345,6 @@ def zoom_to(chrom, pos, variants, variant, window):
         print("starting as none..")
         return None
     curr_chrom = chrom_num(variant.chrom)
-    # print(curr_chrom, variant.pos)
     if curr_chrom is None:
         return None
     if curr_chrom > chrom:
@@ -411,7 +353,6 @@ def zoom_to(chrom, pos, variants, variant, window):
         if (variant.pos > (pos + window)) and (curr_chrom == chrom):
             return variant
         while curr_chrom < chrom:
-            # print("going to a new chrom! {}-{}".format(curr_chrom, chrom), end=" - ")
             try:
                 variant = next(variants)
                 curr_chrom = chrom_num(variant.chrom)
@@ -426,7 +367,6 @@ def zoom_to(chrom, pos, variants, variant, window):
                 curr_chrom = chrom_num(variant.chrom)
                 if curr_chrom is None:
                     return None
-                # print(curr_chrom, variant.pos)
             except StopIteration:
                 print("end of file")
                 return None
@@ -444,7 +384,6 @@ def add_info(gnomad_info, variant, gnomad_info_fields=["AN", "AN_nfe", "AC", "AC
             else:
                 gnomad_info[field].append(variant.info[field])
         except KeyError:
-            # print("missing {} at {}:{}".format(field, variant.chrom, variant.pos))
             gnomad_info[field].append("NA")
 
 def remove_elements(annos, to_kill):
@@ -488,15 +427,12 @@ def update_gnomad(chrom, pos, gnomad_info, variants, variant, fname, window=500,
         for field in gnomad_info_fields:
             gnomad_info[field] = remove_elements(gnomad_info[field], to_kill)
 
-    # print(variant.pos, variant.chrom)
     variant = zoom_to(chrom, pos, variants, variant, window)
-    # print("after zooming", variant.pos, variant.chrom)
     if variant is None:
         print("nowhere to zoom! {}:{}".format(chrom, pos))
-        return None 
+        return None, None
     var_pos = variant.pos
     var_chrom = chrom_num(variant.chrom)
-    # print("adding info {}:{} ".format(chrom, pos), end=" , ")
     while ((var_pos >= (pos - window)) and (var_pos <= (pos + window)) and
            var_chrom==chrom):
         add_info(gnomad_info, variant, gnomad_info_fields=gnomad_info_fields)
@@ -508,8 +444,7 @@ def update_gnomad(chrom, pos, gnomad_info, variants, variant, fname, window=500,
             variant = None
             var_pos = None
             var_chrom = None
-            return variant
-    # print("{}:{}".format(var_chrom, var_pos))
+            return variant, None
 
     lengths_same, lengths = check_lengths(gnomad_info)
     assert lengths_same, (gnomad_info, lengths)
@@ -519,7 +454,6 @@ def update_gnomad(chrom, pos, gnomad_info, variants, variant, fname, window=500,
 rule nearest_AN_splits:
     input:
         gnomad_file,
-        # "/net/data/gnomAD/gnomad.exomes.r2.1.1.sites.liftover_grch38.vcf.bgz",
         os.path.join(data_dir, "region_splits/fake_{region_type}_variants_{{region_name}}_cov.tsv.gz".format(region_type=region_type))
     output:
         temp(os.path.join(data_dir,
@@ -531,14 +465,15 @@ rule nearest_AN_splits:
                               "VQSR_culprit", "allele_type", "dp_hist_all_n_larger", "dp_hist_alt_n_larger",
                               "has_star", "lcr", "n_alt_alleles", "pab_max",
                               "rf_label", "rf_negative_label", "rf_positive_label", "rf_tp_probability_label"]
+        interp_fields = [""]
+
+        
         gnomad_info = {}
         gnomad_info["pos"] = []
         gnomad_info["alt"] = []
         gnomad_info["filter"] = []
         for field in gnomad_info_fields:
             gnomad_info[field] = []
-        
-        window = 0
 
         with gzip.open(input[1], "rt") as f_in, gzip.open(output[0], "wt", newline="") as f_out:
             var_writer = csv.writer(f_out, delimiter="\t", lineterminator="\n")
@@ -549,7 +484,6 @@ rule nearest_AN_splits:
             for var in var_reader:
                 chrom = int(var[2])
                 pos = int(var[3])
-                # print("current var: {} {}".format(chrom, pos))
                 if first:
                     vcf_in = pysam.VariantFile(input[0])
                     variants = vcf_in.fetch(chrom_str(chrom), start=max(0, pos - 2*window - 10), stop=None)
@@ -564,39 +498,115 @@ rule nearest_AN_splits:
                 variant, variants = update_gnomad(chrom, pos, gnomad_info, variants, variant, input[0],
                                                   window=window, gnomad_info_fields=gnomad_info_fields)
                 if len(gnomad_info["pos"]) == 0:
-                    # print("nothing nearby")
                     var_writer.writerow(var + ["NA"]*(len(gnomad_info_fields)+1) + [-1])
                     continue
-                if pos in gnomad_info["pos"]:
-                    # print("exact position found")
+                if pos in gnomad_info["pos"]: # exact position exists in gnomAD VCF
                     matching = [ii for ii, pp in enumerate(gnomad_info["pos"]) if pp==pos]
                     alts = [gnomad_info["alt"][ii] for ii in matching]
                     alt = var[5]
-                    if alt in alts:
+                    if alt in alts: # exact alt allele is found in gnomAD VCF
                         ii = matching[alts.index(alt)]
                         var_writer.writerow(var + [gnomad_info["filter"][ii]] +
                                             [gnomad_info[field][ii] for
                                              field in gnomad_info_fields] + [0])
-                    else:
+                    else: # position but not alt allele found in gnomAD VCF
                         dists = [abs(pos - pp) for pp in gnomad_info["pos"]]
                         min_d = min(dists)
                         ii = dists.index(min_d)
+                        gnomad_fields_add[2] = 0
+                        gnomad_fields_add[3] = 0
+                        gnomad_fields_add[5] = 0
+                        gnomad_fields_add[7] = 0
                         var_writer.writerow(var + [gnomad_info["filter"][ii]] +
                                             [gnomad_info[field][ii] for
                                              field in gnomad_info_fields] + [-1])
 
-                else:
-                    # print("distance interpolating")
+                else: # position not present at all in gnomAD VCF
                     dists = [abs(pos - pp) for pp in gnomad_info["pos"]]
                     min_d = min(dists)
                     ii = dists.index(min_d)
-                    var_writer.writerow(var + [gnomad_info["filter"][ii]] +
-                                        [gnomad_info[field][ii] for
-                                         field in gnomad_info_fields] + [min_d])
+                    gnomad_fields_add = [gnomad_info[field][ii] for field in gnomad_info_fields]
+                    gnomad_fields_add[2] = 0
+                    gnomad_fields_add[3] = 0
+                    gnomad_fields_add[5] = 0
+                    gnomad_fields_add[7] = 0
+                    var_writer.writerow(var + [gnomad_info["filter"][ii]] + 
+                                         gnomad_fields_add + [min_d])
 
-rule add_GIAB:
+
+rule add_mut_rate:
     input:
         os.path.join(data_dir, "region_splits/fake_{region_type}_variants_{{region_name}}_gnomad.tsv.gz".format(region_type=region_type))
+    output:
+        os.path.join(data_dir, "region_splits/fake_{region_type}_variants_{{region_name}}_mu.tsv.gz".format(region_type=region_type))
+    run:
+        with gzip.open(input[0], "rt") as f_in, gzip.open(output[0], "wt", newline="") as f_out:
+            mut_fname_v5 = "1_rate_v5.2_TFBS_correction.gz"
+            mut_file_v5 = gzip.open(os.path.join(rate_dir_v5, mut_fname_v5), "rt")
+            mut_reader_v5 = csv.reader(mut_file_v5, delimiter=" ")
+            mut_current_v5 = next(mut_reader_v5)
+            pos_current_v5 = int(mut_current_v5[0])
+            in_reader = csv.reader(f_in, delimiter="\t")
+            out_writer = csv.writer(f_out, delimiter="\t", lineterminator="\n")
+
+            header = next(in_reader)
+            out_writer.writerow(header + ["mu", "mu_quality", "context"])
+            
+            quality = None
+            context_current = None
+
+            alt_dict_v5 = {}
+            
+            for row in in_reader:
+                chrom = row[2]
+                try:
+                    pos = int(row[3])
+                except ValueError:
+                    continue
+                ref = row[4]
+                alt = row[5]
+                
+                ## Update v5 mutation rate reader if not on the right chromosome
+                if chrom != mut_fname_v5.split("_")[0]:
+                    mut_file_v5.close()
+                    mut_fname_v5 = "{}_rate_v5.2_TFBS_correction.gz".format(chrom)
+                    mut_file_v5 = gzip.open(os.path.join(rate_dir_v5, mut_fname_v5), "rt")
+                    mut_reader_v5 = csv.reader(mut_file_v5, delimiter=" ")
+                    mut_current_v5 = next(mut_reader_v5)
+                    pos_current_v5 = int(mut_current_v5[0])
+
+                # Locate current mutation in v5
+                if pos_current_v5 != pos:
+                    pos_current_v5 = int(mut_current_v5[0])
+                    while pos_current_v5 < pos:
+                        mut_current_v5 = next(mut_reader_v5)
+                        pos_current_v5 = int(mut_current_v5[0])
+                    ref_current_v5 = mut_current_v5[1][2]
+                    pos_ind_v5 = pos_current_v5
+                    if (ref_current_v5 != ref.upper()) and (pos_ind_v5 == pos):
+                        print("reference doesn't match, {}:{}".format(chrom, pos))
+                    alt_dict_v5 = {}
+                    while (pos_ind_v5 == pos) and (ref_current_v5 == ref.upper()):
+                        quality = mut_current_v5[3]
+                        context_current = mut_current_v5[1][0:5]
+                        if len(mut_current_v5) == 4:
+                            alt_dict_v5[mut_current_v5[1][6]] = float(mut_current_v5[2])
+                        else:
+                            try:
+                                alt_dict_v5[mut_current_v5[1][6]] = float(mut_current_v5[4])
+                            except ValueError:
+                                alt_dict_v5[mut_current_v5[1][6]] = float(mut_current_v5[2])
+                        mut_current_v5 = next(mut_reader_v5)
+                        pos_ind_v5 = int(mut_current_v5[0])
+                        
+                try:
+                    out_writer.writerow(row + [alt_dict_v5[alt.upper()], quality, context_current])
+                except KeyError:
+                    out_writer.writerow(row + ["NA", "NA", "NA"])
+                    
+rule add_GIAB:
+    input:
+        os.path.join(data_dir, "region_splits/fake_{region_type}_variants_{{region_name}}_mu.tsv.gz".format(region_type=region_type))
     output:
         os.path.join(data_dir, "region_splits/fake_{region_type}_variants_{{region_name}}_giab.tsv.gz".format(region_type=region_type))
     run:
@@ -722,11 +732,15 @@ rule grab_syn:
         os.path.join(data_dir,
                      "region_splits/fake_{region_type}_variants_{{region_name}}_syn.tsv.gz".format(region_type=region_type))
     run:
-        use_cols = ["Gene", "Canonical_transcript", "Chrom", "Pos", "Allele_ref", "Allele", "Consequence",
-                    "CDS_position", "Protein_position", "Amino_acids", "Extra", "mu", "mu_quality", "context",
-                    "mean", "median", "over_100", "filter", "AN", "AN_nfe", "AC", "AC_nfe",
-                    "BaseQRankSum", "ClippingRankSum", "ReadPosRankSum", "SOR", "allele_type", "n_alt_alleles",
-                    "rf_label", "interp_dist", "site_in_genome_bottle", "Carlson_rate"]
+        # use_cols = ["Gene", "Canonical_transcript", "Chrom", "Pos", "Allele_ref", "Allele", "Consequence",
+        #             "CDS_position", "Protein_position", "Amino_acids", "Extra", "mu", "mu_quality", "context",
+        #             "mean", "median", "over_100", "filter", "AN", "AN_nfe", "AC", "AC_nfe",
+        #             "BaseQRankSum", "ClippingRankSum", "ReadPosRankSum", "SOR", "allele_type", "n_alt_alleles",
+        #             "rf_label", "interp_dist", "site_in_genome_bottle", "Carlson_rate"]
+
+        use_cols = ["Gene", "Chrom", "Pos", "Allele_ref", "Allele", "Consequence", "filter",
+                    "has_star", "lcr", "rf_label", "allele_type", "context", "AN", "AN_nfe", "AC", "AC_nfe", 
+                    "mu", "mu_quality", "Carlson_rate", "interp_dist"]
         with gzip.open(input[0], "rt") as f_in, gzip.open(output[0], "wt", newline="") as f_out:
             var_writer = csv.writer(f_out, delimiter="\t", lineterminator="\n")
             var_reader = csv.reader(f_in, delimiter="\t")
@@ -739,7 +753,6 @@ rule grab_syn:
                     var_writer.writerow([var[ii] for ii in col_inds])
                 
             
-
         
 # rule merge_gpcr:
 #     input:
@@ -800,7 +813,7 @@ rule merge_syn:
         for ii in range(1, len(input.syn_files)):
             print("gzip -cd " + input.syn_files[ii] + " | tail -n +2  >> " + base_name)
             os.system("gzip -cd " + input.syn_files[ii] + " | tail -n +2 >> " + base_name)
-        os.system("sort -T /net/scratch/ -k 3,3 -k 4,4 -k 6,6 -n " + base_name + " | gzip -c > " + output.outfile)
+        os.system("sort -T /net/scratch/ -k 2,2 -k 3,3 -k 5,5 -n " + base_name + " | gzip -c > " + output.outfile)
         os.system("rm " + base_name)
 
 # rule merge_ms:
